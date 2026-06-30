@@ -1,13 +1,10 @@
 """
 Routes for job seekers to upload a resume against a specific job.
-
-NOTE: AI scoring (parser -> extractor -> features -> matcher) gets wired in
-once Person C's ai/ module is ready. For now this saves the file and a
-placeholder candidate record so the frontend can be built against a real
-working endpoint immediately.
+AI scoring (parser -> features -> matcher) is wired in here.
 """
 
 import os
+import sys
 import shutil
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
@@ -16,6 +13,12 @@ from typing import List
 from database import get_db
 import models
 import schemas
+
+# the ai/ folder is a sibling of backend/, so add it to the path to import from it
+AI_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "ai")
+sys.path.insert(0, AI_DIR)
+from parser import parse_resume          # noqa: E402
+from matcher import score_candidate      # noqa: E402
 
 router = APIRouter(prefix="/candidates", tags=["candidates"])
 
@@ -43,30 +46,21 @@ def upload_candidate(
     with open(save_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    # --- TODO (Person C): replace this placeholder block with real AI scoring ---
-    # from ai.parser import parse_resume
-    # from ai.extractor import extract_fields
-    # from ai.matcher import score_candidate
-    # resume_text = parse_resume(save_path)
-    # fields = extract_fields(resume_text)
-    # result = score_candidate(resume_text, job.description)
-    resume_text_placeholder = None
-    extracted_skills_placeholder = None
-    experience_years_placeholder = None
-    match_score_placeholder = 0.0
-    prediction_placeholder = "Pending"
-    explanation_placeholder = "AI scoring not yet connected"
-    # --- end placeholder ---
+    try:
+        resume_text = parse_resume(save_path)
+        result = score_candidate(resume_text, job.description)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI scoring failed: {str(e)}")
 
     new_candidate = models.Candidate(
         job_id=job_id,
         filename=file.filename,
-        resume_text=resume_text_placeholder,
-        extracted_skills=extracted_skills_placeholder,
-        experience_years=experience_years_placeholder,
-        match_score=match_score_placeholder,
-        prediction=prediction_placeholder,
-        explanation=explanation_placeholder,
+        resume_text=resume_text,
+        extracted_skills=", ".join(result["explanation"]["matched_skills"]),
+        experience_years=result["explanation"]["resume_experience_years"],
+        match_score=result["match_score"],
+        prediction=result["prediction"],
+        explanation=str(result["explanation"]),
     )
     db.add(new_candidate)
     db.commit()
