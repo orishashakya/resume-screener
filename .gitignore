@@ -1,8 +1,12 @@
 venv/
+backend/venv/
+frontend/node_modules/
 __pycache__/
 *.pyc
 .DS_Store
-data/screener.db
+backend/screener.db
+backend/uploads/*
+!backend/uploads/.gitkeep
 .streamlit/secrets.toml
 *.pkl
 .vscode/
